@@ -101,4 +101,4 @@ The program uses several key algorithms:
 - Total valid board states: 5,478
 - Unique board states (after removing rotations and reflections): 765
 
-You can visit this solution on [text](https://m3fivux8yn.yourware.so)
+You can visit this solution on [https://m3fivux8yn.yourware.so](https://m3fivux8yn.yourware.so)
