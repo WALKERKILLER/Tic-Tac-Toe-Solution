@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import itertools
 import json
 from collections import defaultdict
@@ -149,7 +147,8 @@ def get_all_variants(board):
 def find_transitions(boards):
     """Find all possible transitions between board states."""
     transitions = defaultdict(list)
-    board_to_id = {board_to_string(board): i for i, board in enumerate(boards)}
+    # Adjust board_to_id to use 1-based indexing
+    board_to_id = {board_to_string(board): i+1 for i, board in enumerate(boards)}
     
     # Check each state
     for i, board in enumerate(boards):
@@ -177,8 +176,8 @@ def find_transitions(boards):
                         new_board_str = board_to_string(new_board)
                         if new_board_str in board_to_id:
                             new_id = board_to_id[new_board_str]
-                            if new_id not in transitions[i]:
-                                transitions[i].append(new_id)
+                            if new_id not in transitions[i+1]:  # Use 1-based index for transitions
+                                transitions[i+1].append(new_id)
     
     # Verify transitions
     total_transitions = sum(len(targets) for targets in transitions.values())
@@ -186,9 +185,8 @@ def find_transitions(boards):
     
     return transitions
 
-def generate_html(boards, transitions, filename, title):
-    """Generate HTML visualization of board states and transitions."""
-    # Add more information to HTML
+def generate_html(all_boards, all_transitions, unique_boards, unique_transitions, filename, title):
+    """Generate HTML visualization of board states and transitions with toggle between all and unique states."""
     html = f"""
     <!DOCTYPE html>
     <html lang="en">
@@ -210,6 +208,7 @@ def generate_html(boards, transitions, filename, title):
                 flex-wrap: wrap;
                 gap: 20px;
                 margin-bottom: 30px;
+                position: relative; /* For transition lines */
             }}
             .board-wrapper {{
                 background-color: white;
@@ -217,6 +216,22 @@ def generate_html(boards, transitions, filename, title):
                 padding: 15px;
                 box-shadow: 0 2px 5px rgba(0,0,0,0.1);
                 width: 180px;
+                position: relative; /* For transition lines */
+                transition: transform 0.3s, box-shadow 0.3s;
+                z-index: 1;
+            }}
+            .board-wrapper:hover {{
+                transform: translateY(-5px);
+                box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+                z-index: 10;
+            }}
+            .board-wrapper.highlight {{
+                border: 3px solid #3498db;
+                box-shadow: 0 0 15px rgba(52, 152, 219, 0.7);
+            }}
+            .board-wrapper.transition-target {{
+                border: 3px solid #e74c3c;
+                box-shadow: 0 0 15px rgba(231, 76, 60, 0.7);
             }}
             .board {{
                 display: grid;
@@ -271,7 +286,7 @@ def generate_html(boards, transitions, filename, title):
             .filters {{
                 margin-bottom: 20px;
             }}
-            .filter-btn {{
+            .filter-btn, .view-btn, .transition-btn {{
                 margin-right: 10px;
                 padding: 5px 10px;
                 background-color: #f0f0f0;
@@ -279,37 +294,113 @@ def generate_html(boards, transitions, filename, title):
                 border-radius: 4px;
                 cursor: pointer;
             }}
-            .filter-btn.active {{
+            .filter-btn.active, .view-btn.active, .transition-btn.active {{
                 background-color: #3498db;
                 color: white;
+            }}
+            .view-controls, .transition-controls {{
+                margin-bottom: 20px;
+                padding: 15px;
+                background-color: white;
+                border-radius: 8px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            }}
+            .board-view {{
+                display: none;
+            }}
+            .board-view.active {{
+                display: block;
+            }}
+            .transition-line {{
+                position: absolute;
+                pointer-events: none;
+                z-index: 0;
+                opacity: 0;
+                transition: opacity 0.3s;
+            }}
+            .transition-line.visible {{
+                opacity: 1;
+            }}
+            .transition-arrow {{
+                position: absolute;
+                width: 0;
+                height: 0;
+                border-left: 8px solid transparent;
+                border-right: 8px solid transparent;
+                border-bottom: 12px solid #e74c3c;
+                transform-origin: center bottom;
+                pointer-events: none;
+                z-index: 0;
+                opacity: 0;
+                transition: opacity 0.3s;
+            }}
+            .transition-arrow.visible {{
+                opacity: 1;
+            }}
+            .transition-info {{
+                position: fixed;
+                bottom: 20px;
+                right: 20px;
+                background-color: white;
+                padding: 15px;
+                border-radius: 8px;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+                z-index: 100;
+                display: none;
+            }}
+            .transition-info.visible {{
+                display: block;
+            }}
+            .transition-mode-info {{
+                margin-top: 10px;
+                font-style: italic;
+                color: #666;
             }}
         </style>
     </head>
     <body>
         <h1>{title}</h1>
-        <div class="stats">
-            <p>Total board states: <strong>{len(boards)}</strong></p>
-            <p>Total transitions: <strong>{sum(len(t) for t in transitions.values())}</strong></p>
+        
+        <div class="view-controls">
+            <h2>View Options</h2>
+            <button class="view-btn active" data-view="all">All States ({len(all_boards)})</button>
+            <button class="view-btn" data-view="unique">Unique States ({len(unique_boards)})</button>
         </div>
         
-        <div class="search-container">
-            <input type="text" id="boardSearch" placeholder="Search board by ID...">
+        <div class="transition-controls">
+            <h2>Transition Visualization</h2>
+            <button class="transition-btn active" data-mode="click">Click Mode (Click on a board to see transitions)</button>
+            <button class="transition-btn" data-mode="hover">Hover Mode (Hover over a board to see transitions)</button>
+            <div class="transition-mode-info">
+                In Click Mode: Click on a board to see its transitions. Click again to hide.
+                <br>In Hover Mode: Hover over a board to see its transitions. Move away to hide.
+            </div>
         </div>
         
-        <div class="filters">
-            <button class="filter-btn active" data-filter="all">All States</button>
-            <button class="filter-btn" data-filter="x-turn">X's Turn</button>
-            <button class="filter-btn" data-filter="o-turn">O's Turn</button>
-            <button class="filter-btn" data-filter="x-win">X Wins</button>
-            <button class="filter-btn" data-filter="o-win">O Wins</button>
-            <button class="filter-btn" data-filter="draw">Draw</button>
-        </div>
-        
-        <div class="board-container" id="boardContainer">
+        <div id="all-boards-view" class="board-view active">
+            <div class="stats">
+                <p>Total board states: <strong>{len(all_boards)}</strong></p>
+                <p>Total transitions: <strong>{sum(len(t) for t in all_transitions.values())}</strong></p>
+            </div>
+            
+            <div class="search-container">
+                <input type="text" id="allBoardSearch" placeholder="Search board by ID...">
+            </div>
+            
+            <div class="filters">
+                <button class="filter-btn active" data-filter="all" data-view="all">All States</button>
+                <button class="filter-btn" data-filter="x-turn" data-view="all">X's Turn</button>
+                <button class="filter-btn" data-filter="o-turn" data-view="all">O's Turn</button>
+                <button class="filter-btn" data-filter="x-win" data-view="all">X Wins</button>
+                <button class="filter-btn" data-filter="o-win" data-view="all">O Wins</button>
+                <button class="filter-btn" data-filter="draw" data-view="all">Draw</button>
+            </div>
+            
+            <div class="board-container" id="allBoardContainer">
     """
     
-    # Add each board to the HTML
-    for i, board in enumerate(boards):
+    # Add each board to the HTML (all boards)
+    for i, board in enumerate(all_boards):
         # Convert board cells to X and O for display
         display_cells = []
         for row in board:
@@ -321,8 +412,9 @@ def generate_html(boards, transitions, filename, title):
                 else:  # cell == 2
                     display_cells.append("O")
         
-        # Get transitions for this board
-        outgoing = transitions.get(i, [])
+        # Get transitions for this board - use 1-based indexing
+        board_id = i + 1
+        outgoing = all_transitions.get(board_id, [])
         transition_text = ", ".join(str(t) for t in outgoing) if outgoing else "None"
         
         # Determine game state
@@ -345,8 +437,11 @@ def generate_html(boards, transitions, filename, title):
         elif is_draw:
             filter_class = "draw"
         
+        # Store transitions as data attribute for JavaScript
+        transitions_attr = " ".join(str(t) for t in outgoing) if outgoing else ""
+        
         html += f"""
-            <div class="board-wrapper" data-id="{i}" data-filter="{filter_class}">
+            <div class="board-wrapper" data-id="{board_id}" data-filter="{filter_class}" data-transitions="{transitions_attr}">
                 <div class="board">
         """
         
@@ -356,19 +451,133 @@ def generate_html(boards, transitions, filename, title):
         
         html += f"""
                 </div>
-                <div class="board-id">ID: {i}</div>
+                <div class="board-id">ID: {board_id}</div>
                 <div class="transitions">Transitions to: {transition_text}</div>
             </div>
         """
     
     html += """
+            </div>
+        </div>
+        
+        <div id="unique-boards-view" class="board-view">
+            <div class="stats">
+                <p>Total unique board states: <strong>{0}</strong></p>
+                <p>Total transitions: <strong>{1}</strong></p>
+            </div>
+            
+            <div class="search-container">
+                <input type="text" id="uniqueBoardSearch" placeholder="Search board by ID...">
+            </div>
+            
+            <div class="filters">
+                <button class="filter-btn active" data-filter="all" data-view="unique">All States</button>
+                <button class="filter-btn" data-filter="x-turn" data-view="unique">X's Turn</button>
+                <button class="filter-btn" data-filter="o-turn" data-view="unique">O's Turn</button>
+                <button class="filter-btn" data-filter="x-win" data-view="unique">X Wins</button>
+                <button class="filter-btn" data-filter="o-win" data-view="unique">O Wins</button>
+                <button class="filter-btn" data-filter="draw" data-view="unique">Draw</button>
+            </div>
+            
+            <div class="board-container" id="uniqueBoardContainer">
+    """.format(len(unique_boards), sum(len(t) for t in unique_transitions.values()))
+    
+    # Add each board to the HTML (unique boards)
+    for i, board in enumerate(unique_boards):
+        # Convert board cells to X and O for display
+        display_cells = []
+        for row in board:
+            for cell in row:
+                if cell == 0:
+                    display_cells.append(".")
+                elif cell == 1:
+                    display_cells.append("X")
+                else:  # cell == 2
+                    display_cells.append("O")
+        
+        # Get transitions for this board - use 1-based indexing
+        board_id = i + 1
+        outgoing = unique_transitions.get(board_id, [])
+        transition_text = ", ".join(str(t) for t in outgoing) if outgoing else "None"
+        
+        # Determine game state
+        flat_board = [cell for row in board for cell in row]
+        x_count = flat_board.count(1)
+        o_count = flat_board.count(2)
+        x_won = has_won(board, 1)
+        o_won = has_won(board, 2)
+        is_draw = flat_board.count(0) == 0 and not x_won and not o_won
+        
+        # Determine whose turn it is
+        current_player = "x-turn" if x_count == o_count else "o-turn"
+        
+        # Set filter class
+        filter_class = current_player
+        if x_won:
+            filter_class = "x-win"
+        elif o_won:
+            filter_class = "o-win"
+        elif is_draw:
+            filter_class = "draw"
+        
+        # Store transitions as data attribute for JavaScript
+        transitions_attr = " ".join(str(t) for t in outgoing) if outgoing else ""
+        
+        html += f"""
+            <div class="board-wrapper" data-id="{board_id}" data-filter="{filter_class}" data-transitions="{transitions_attr}">
+                <div class="board">
+        """
+        
+        for j, cell_value in enumerate(display_cells):
+            cell_class = f"cell cell-{board[j//3][j%3]}"
+            html += f'<div class="{cell_class}">{cell_value}</div>'
+        
+        html += f"""
+                </div>
+                <div class="board-id">ID: {board_id}</div>
+                <div class="transitions">Transitions to: {transition_text}</div>
+            </div>
+        """
+    
+    html += """
+            </div>
+        </div>
+        
+        <div class="transition-info">
+            <h3>Transition Details</h3>
+            <p id="transitionDetails"></p>
         </div>
         
         <script>
-            // Search functionality
-            document.getElementById('boardSearch').addEventListener('input', function() {
+            // View toggle functionality
+            const viewButtons = document.querySelectorAll('.view-btn');
+            const boardViews = document.querySelectorAll('.board-view');
+            
+            viewButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    // Clear any active transitions
+                    clearAllTransitions();
+                    
+                    // Update active button
+                    viewButtons.forEach(btn => btn.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    // Show the selected view
+                    const viewType = this.getAttribute('data-view');
+                    boardViews.forEach(view => {
+                        if (view.id === viewType + '-boards-view') {
+                            view.classList.add('active');
+                        } else {
+                            view.classList.remove('active');
+                        }
+                    });
+                });
+            });
+            
+            // Search functionality for all boards
+            document.getElementById('allBoardSearch').addEventListener('input', function() {
                 const searchValue = this.value.trim();
-                const boardWrappers = document.querySelectorAll('.board-wrapper');
+                const boardWrappers = document.querySelectorAll('#allBoardContainer .board-wrapper');
                 
                 boardWrappers.forEach(wrapper => {
                     const boardId = wrapper.getAttribute('data-id');
@@ -378,18 +587,46 @@ def generate_html(boards, transitions, filename, title):
                         wrapper.style.display = 'none';
                     }
                 });
+                
+                // Clear any active transitions when searching
+                clearAllTransitions();
+            });
+            
+            // Search functionality for unique boards
+            document.getElementById('uniqueBoardSearch').addEventListener('input', function() {
+                const searchValue = this.value.trim();
+                const boardWrappers = document.querySelectorAll('#uniqueBoardContainer .board-wrapper');
+                
+                boardWrappers.forEach(wrapper => {
+                    const boardId = wrapper.getAttribute('data-id');
+                    if (searchValue === '' || boardId.includes(searchValue)) {
+                        wrapper.style.display = 'block';
+                    } else {
+                        wrapper.style.display = 'none';
+                    }
+                });
+                
+                // Clear any active transitions when searching
+                clearAllTransitions();
             });
             
             // Filter functionality
             const filterButtons = document.querySelectorAll('.filter-btn');
             filterButtons.forEach(button => {
                 button.addEventListener('click', function() {
-                    // Update active button
-                    filterButtons.forEach(btn => btn.classList.remove('active'));
+                    // Clear any active transitions
+                    clearAllTransitions();
+                    
+                    // Update active button within the same view
+                    const viewType = this.getAttribute('data-view');
+                    document.querySelectorAll(`.filter-btn[data-view="${viewType}"]`).forEach(btn => {
+                        btn.classList.remove('active');
+                    });
                     this.classList.add('active');
                     
                     const filter = this.getAttribute('data-filter');
-                    const boardWrappers = document.querySelectorAll('.board-wrapper');
+                    const containerId = viewType === 'all' ? 'allBoardContainer' : 'uniqueBoardContainer';
+                    const boardWrappers = document.querySelectorAll(`#${containerId} .board-wrapper`);
                     
                     boardWrappers.forEach(wrapper => {
                         if (filter === 'all' || wrapper.getAttribute('data-filter') === filter) {
@@ -400,6 +637,210 @@ def generate_html(boards, transitions, filename, title):
                     });
                 });
             });
+            
+            // Transition mode toggle
+            const transitionButtons = document.querySelectorAll('.transition-btn');
+            let transitionMode = 'click'; // Default mode
+            
+            transitionButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    // Clear any active transitions
+                    clearAllTransitions();
+                    
+                    // Update active button
+                    transitionButtons.forEach(btn => btn.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    // Set the transition mode
+                    transitionMode = this.getAttribute('data-mode');
+                    
+                    // Update event listeners based on mode
+                    setupTransitionEventListeners();
+                });
+            });
+            
+            // Function to setup transition event listeners based on current mode
+            function setupTransitionEventListeners() {
+                // Remove existing event listeners
+                const boardWrappers = document.querySelectorAll('.board-wrapper');
+                boardWrappers.forEach(wrapper => {
+                    wrapper.removeEventListener('click', handleBoardClick);
+                    wrapper.removeEventListener('mouseenter', handleBoardHover);
+                    wrapper.removeEventListener('mouseleave', handleBoardLeave);
+                });
+                
+                // Add new event listeners based on mode
+                if (transitionMode === 'click') {
+                    boardWrappers.forEach(wrapper => {
+                        wrapper.addEventListener('click', handleBoardClick);
+                    });
+                } else if (transitionMode === 'hover') {
+                    boardWrappers.forEach(wrapper => {
+                        wrapper.addEventListener('mouseenter', handleBoardHover);
+                        wrapper.addEventListener('mouseleave', handleBoardLeave);
+                    });
+                }
+            }
+            
+            // Variables to track active board and transitions
+            let activeBoard = null;
+            let transitionLines = [];
+            let transitionArrows = [];
+            
+            // Handle board click for click mode
+            function handleBoardClick(event) {
+                const clickedBoard = this;
+                const boardId = clickedBoard.getAttribute('data-id');
+                
+                // If this board is already active, clear transitions
+                if (clickedBoard === activeBoard) {
+                    clearAllTransitions();
+                    return;
+                }
+                
+                // Clear any existing transitions
+                clearAllTransitions();
+                
+                // Set this board as active
+                activeBoard = clickedBoard;
+                clickedBoard.classList.add('highlight');
+                
+                // Show transitions
+                showTransitions(clickedBoard);
+            }
+            
+            // Handle board hover for hover mode
+            function handleBoardHover(event) {
+                const hoveredBoard = this;
+                
+                // Clear any existing transitions
+                clearAllTransitions();
+                
+                // Set this board as active
+                activeBoard = hoveredBoard;
+                hoveredBoard.classList.add('highlight');
+                
+                // Show transitions
+                showTransitions(hoveredBoard);
+            }
+            
+            // Handle board leave for hover mode
+            function handleBoardLeave(event) {
+                clearAllTransitions();
+            }
+            
+            // Function to show transitions from a board
+            function showTransitions(boardElement) {
+                const boardId = boardElement.getAttribute('data-id');
+                const transitionsStr = boardElement.getAttribute('data-transitions');
+                
+                if (!transitionsStr) {
+                    // No transitions
+                    document.querySelector('.transition-info').classList.add('visible');
+                    document.getElementById('transitionDetails').textContent = `Board ${boardId} has no possible transitions.`;
+                    return;
+                }
+                
+                const transitions = transitionsStr.split(' ').map(Number);
+                const container = boardElement.parentElement;
+                const sourceRect = boardElement.getBoundingClientRect();
+                const containerRect = container.getBoundingClientRect();
+                
+                // Show transition info
+                document.querySelector('.transition-info').classList.add('visible');
+                document.getElementById('transitionDetails').textContent = 
+                    `Board ${boardId} transitions to ${transitions.length} state(s): ${transitions.join(', ')}`;
+                
+                // Find and highlight target boards
+                transitions.forEach(targetId => {
+                    const targetBoard = container.querySelector(`.board-wrapper[data-id="${targetId}"]`);
+                    if (targetBoard) {
+                        targetBoard.classList.add('transition-target');
+                        
+                        // Create transition line
+                        drawTransitionLine(boardElement, targetBoard, container);
+                    }
+                });
+            }
+            
+            // Function to draw a transition line between two boards
+            function drawTransitionLine(sourceBoard, targetBoard, container) {
+                const sourceRect = sourceBoard.getBoundingClientRect();
+                const targetRect = targetBoard.getBoundingClientRect();
+                const containerRect = container.getBoundingClientRect();
+                
+                // Calculate center points
+                const sourceX = sourceRect.left + sourceRect.width / 2 - containerRect.left;
+                const sourceY = sourceRect.top + sourceRect.height / 2 - containerRect.top;
+                const targetX = targetRect.left + targetRect.width / 2 - containerRect.left;
+                const targetY = targetRect.top + targetRect.height / 2 - containerRect.top;
+                
+                // Calculate distance and angle
+                const dx = targetX - sourceX;
+                const dy = targetY - sourceY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+                
+                // Create line element
+                const line = document.createElement('div');
+                line.className = 'transition-line';
+                line.style.width = `${distance}px`;
+                line.style.height = '3px';
+                line.style.backgroundColor = '#e74c3c';
+                line.style.position = 'absolute';
+                line.style.left = `${sourceX}px`;
+                line.style.top = `${sourceY}px`;
+                line.style.transformOrigin = '0 50%';
+                line.style.transform = `rotate(${angle}deg)`;
+                line.style.zIndex = '0';
+                
+                // Create arrow element
+                const arrow = document.createElement('div');
+                arrow.className = 'transition-arrow';
+                arrow.style.left = `${targetX}px`;
+                arrow.style.top = `${targetY - 10}px`;
+                arrow.style.transform = `translateX(-50%) rotate(${angle}deg)`;
+                
+                // Add to container
+                container.appendChild(line);
+                container.appendChild(arrow);
+                
+                // Store for later cleanup
+                transitionLines.push(line);
+                transitionArrows.push(arrow);
+                
+                // Trigger reflow and add visible class for animation
+                void line.offsetWidth;
+                void arrow.offsetWidth;
+                line.classList.add('visible');
+                arrow.classList.add('visible');
+            }
+            
+            // Function to clear all transitions
+            function clearAllTransitions() {
+                // Remove highlight from active board
+                if (activeBoard) {
+                    activeBoard.classList.remove('highlight');
+                    activeBoard = null;
+                }
+                
+                // Remove target highlights
+                document.querySelectorAll('.transition-target').forEach(board => {
+                    board.classList.remove('transition-target');
+                });
+                
+                // Remove transition lines and arrows
+                transitionLines.forEach(line => line.remove());
+                transitionArrows.forEach(arrow => arrow.remove());
+                transitionLines = [];
+                transitionArrows = [];
+                
+                // Hide transition info
+                document.querySelector('.transition-info').classList.remove('visible');
+            }
+            
+            // Initialize transition event listeners
+            setupTransitionEventListeners();
         </script>
     </body>
     </html>
@@ -420,9 +861,6 @@ def main():
     # Calculate transitions for all valid states
     all_transitions = find_transitions(valid_boards)
     
-    # Generate HTML with all valid states
-    generate_html(valid_boards, all_transitions, 'tic_tac_toe_all_states.html', 'Tic-Tac-Toe All Valid States (5478)')
-    
     # Remove duplicate states (considering rotations and reflections)
     unique_boards = remove_duplicates(valid_boards)
     print(f"Total unique boards (after removing duplicates): {len(unique_boards)}")
@@ -434,13 +872,15 @@ def main():
     # Calculate transitions for unique states
     unique_transitions = find_unique_transitions(unique_boards)
     
-    # Generate HTML with unique states
-    generate_html(unique_boards, unique_transitions, 'tic_tac_toe_unique_states.html', 'Tic-Tac-Toe Unique Valid States (765)')
+    # Generate HTML with both all states and unique states
+    generate_html(valid_boards, all_transitions, unique_boards, unique_transitions, 
+                 'tic_tac_toe_states.html', 'Tic-Tac-Toe States Visualization')
 
 def find_unique_transitions(unique_boards):
     """Find transitions between unique board states."""
     unique_transitions = defaultdict(list)
-    unique_board_to_id = {board_to_string(board): i for i, board in enumerate(unique_boards)}
+    # Adjust unique_board_to_id to use 1-based indexing
+    unique_board_to_id = {board_to_string(board): i+1 for i, board in enumerate(unique_boards)}
     
     for i, board in enumerate(unique_boards):
         board_str = board_to_string(board)
@@ -469,8 +909,8 @@ def find_unique_transitions(unique_boards):
                             variant_str = board_to_string(variant)
                             if variant_str in unique_board_to_id:
                                 new_id = unique_board_to_id[variant_str]
-                                if new_id not in unique_transitions[i]:
-                                    unique_transitions[i].append(new_id)
+                                if new_id not in unique_transitions[i+1]:  # Use 1-based index for transitions
+                                    unique_transitions[i+1].append(new_id)
                                 canonical_found = True
                                 break
                         
